@@ -274,6 +274,37 @@ function Get-TimeWaxBudgetCost {
     }
 }
 
+function Get-TimeWaxPurchaseInvoice {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory,ValueFromPipelineByPropertyName)]
+        [ValidateNotNullOrEmpty()]
+        [Alias('Code','Name')]
+        [String] $Project
+    )
+    begin {
+        if (-not (TestAuthenticated)) {
+            Write-Error -Message "Token was not valid or not found. Run Get-TimeWaxToken" -ErrorAction Stop
+        }
+        $PurchaseInvoiceUri = $script:APIUri + 'purchaseinvoices/list/'
+    } process {
+        $Body = [xml]('<request> 
+         <token>{0}</token>
+         <project>{1}</project>
+        </request>' -f $script:Token, $Project)
+
+        $Response = (Invoke-RestMethod -Uri $PurchaseInvoiceUri -Method Post -Body $Body -ContentType application/xml -UseBasicParsing).response
+        if ($Response.valid -eq 'no') {
+            Write-Error -Message "$($Response.errors.'#cdata-section')" -ErrorAction Stop
+        } else {
+            foreach ($P in $Response.purchaseInvoices.purchaseInvoice) {
+                Write-Output -InputObject $P
+            }
+        }
+    }
+}
+
+
 function Get-TimeWaxCalendarEntry {
     [CmdletBinding(DefaultParameterSetName='List')]
     param (
