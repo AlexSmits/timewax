@@ -248,23 +248,36 @@ function Get-TimeWaxCompany {
         if (-not (TestAuthenticated)) {
             Write-Error -Message "Token was not valid or not found. Run Get-TimeWaxToken" -ErrorAction Stop
         }
-        $CompanyUri = $script:APIUri + 'company/list/'
+        if ($PSCmdlet.ParameterSetName -eq 'List') {
+            $CompanyUri = $script:APIUri + 'company/list/'
+        } else {
+            $CompanyUri = $script:APIUri + 'company/get/'
+        }
+        
     } process {
         $Body = [xml]('<request> 
          <token>{0}</token>
         </request>' -f $script:Token)
+        if ($Name) {
+            $child = $Body.CreateElement("company")
+            $child.InnerText = $Name
+            [void] $body.DocumentElement.AppendChild($child)
+        }
+        if ($Code) {
+            $child = $Body.CreateElement("company")
+            $child.InnerText = $Code
+            [void] $body.DocumentElement.AppendChild($child)
+        }
         $Response = (Invoke-RestMethod -Uri $CompanyUri -Method Post -Body $Body -ContentType application/xml -UseBasicParsing).response
         if ($Response.valid -eq 'no') {
             Write-Error -Message "$($Response.errors.'#cdata-section')" -ErrorAction Stop
-        } else {
+        } 
+        if ($PSCmdlet.ParameterSetName -eq 'List') {
             foreach ($C in $Response.companies.company) {
-                if (($PSCmdlet.ParameterSetName -eq 'Named') -and ($C.name -ne $Name)) {
-                    continue
-                } elseif (($PSCmdlet.ParameterSetName -eq 'Code') -and ($C.code -ne $Code)) {
-                    continue
-                }
                 Write-Output -InputObject $C
             }
+        } else {
+            Write-Output -InputObject $Response.company
         }
     }
 }
