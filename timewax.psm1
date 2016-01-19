@@ -79,8 +79,8 @@ function Get-TimeWaxResource {
             Write-Error -Message "$($Response.errors.'#cdata-section')" -ErrorAction Stop
         } else {
             if ($List) {
-                foreach ($r in $Response.resources) {
-                    Write-Output -InputObject $r.resource
+                foreach ($r in $Response.resources.resource) {
+                    Write-Output -InputObject $r
                 }
             } else {
                 Write-Output -InputObject $Response.resource
@@ -144,8 +144,8 @@ function Get-TimeWaxTimeEntry {
         if ($Response.valid -eq 'no') {
             Write-Error -Message "$($Response.errors.'#cdata-section')" -ErrorAction Stop
         } else {
-            foreach ($e in $Response.Entries) {
-                Write-Output -InputObject $e.entry
+            foreach ($e in $Response.Entries.entry) {
+                Write-Output -InputObject $e
             }
         }
     }
@@ -170,8 +170,8 @@ function Get-TimeWaxProject {
         if ($Response.valid -eq 'no') {
             Write-Error -Message "$($Response.errors.'#cdata-section')" -ErrorAction Stop
         } else {
-            foreach ($P in $Response.projects) {
-                Write-Output -InputObject $P.project
+            foreach ($P in $Response.projects.project) {
+                Write-Output -InputObject $P
             }
         }
     }
@@ -226,8 +226,44 @@ function Get-TimeWaxCalendarEntry {
         if ($Response.valid -eq 'no') {
             Write-Error -Message "$($Response.errors.'#cdata-section')" -ErrorAction Stop
         } else {
-            foreach ($e in $Response.Entries) {
-                Write-Output -InputObject $e.entry
+            foreach ($e in $Response.Entries.entry) {
+                Write-Output -InputObject $e
+            }
+        }
+    }
+}
+
+function Get-TimeWaxCompany {
+    [CmdletBinding(DefaultParameterSetName='List')]
+    param (
+        [Parameter(ParameterSetName='Named')]
+        [ValidateNotNullOrEmpty()]
+        [String] $Name,
+
+        [Parameter(ParameterSetName='Code')]
+        [ValidateNotNullOrEmpty()]
+        [String] $Code
+    )
+    begin {
+        if (-not (TestAuthenticated)) {
+            Write-Error -Message "Token was not valid or not found. Run Get-TimeWaxToken" -ErrorAction Stop
+        }
+        $CompanyUri = $script:APIUri + 'company/list/'
+    } process {
+        $Body = [xml]('<request> 
+         <token>{0}</token>
+        </request>' -f $script:Token)
+        $Response = (Invoke-RestMethod -Uri $CompanyUri -Method Post -Body $Body -ContentType application/xml -UseBasicParsing).response
+        if ($Response.valid -eq 'no') {
+            Write-Error -Message "$($Response.errors.'#cdata-section')" -ErrorAction Stop
+        } else {
+            foreach ($C in $Response.companies.company) {
+                if (($PSCmdlet.ParameterSetName -eq 'Named') -and ($C.name -ne $Name)) {
+                    continue
+                } elseif (($PSCmdlet.ParameterSetName -eq 'Code') -and ($C.code -ne $Code)) {
+                    continue
+                }
+                Write-Output -InputObject $C
             }
         }
     }
