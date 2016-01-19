@@ -31,7 +31,7 @@ function Get-TimeWaxToken {
             </request>' -f $ClientName,$Credential.UserName,$Credential.GetNetworkCredential().Password)
             $Response = (Invoke-RestMethod -Uri $TokenUri -Method Post -Body $Body -ContentType application/xml -UseBasicParsing).response
             if ($Response.valid -eq 'no') {
-                Write-Error -Message "Did not acquire a token. Exception: $($Response.errors)" -ErrorAction Stop
+                Write-Error -Message "Did not acquire a token. Exception: $($Response.errors.'#cdata-section')" -ErrorAction Stop
             } else {
                 Set-Variable -Scope 1 -Name Token -Value $Response.token
                 Set-Variable -Scope 1 -Name ValidUntil -Value (ConvertDateTime $Response.validUntil)
@@ -76,7 +76,7 @@ function Get-TimeWaxResource {
         }
         $Response = (Invoke-RestMethod -Uri $ResourceUri -Method Post -Body $Body -ContentType application/xml -UseBasicParsing).response
         if ($Response.valid -eq 'no') {
-            Write-Error -Message "$($Response.error)" -ErrorAction Stop
+            Write-Error -Message "$($Response.errors.'#cdata-section')" -ErrorAction Stop
         } else {
             if ($List) {
                 foreach ($r in $Response.resources) {
@@ -142,7 +142,7 @@ function Get-TimeWaxTimeEntry {
         }
         $Response = (Invoke-RestMethod -Uri $TimeURI -Method Post -Body $Body -ContentType application/xml -UseBasicParsing).response
         if ($Response.valid -eq 'no') {
-            Write-Error -Message "$($Response.errors)" -ErrorAction Stop
+            Write-Error -Message "$($Response.errors.'#cdata-section')" -ErrorAction Stop
         } else {
             foreach ($e in $Response.Entries) {
                 Write-Output -InputObject $e.entry
@@ -168,7 +168,7 @@ function Get-TimeWaxProject {
         $Response = (Invoke-RestMethod -Uri $ProjectUri -Method Post -Body $Body -ContentType application/xml -UseBasicParsing).response
         
         if ($Response.valid -eq 'no') {
-            Write-Error -Message "$($Response.errors)" -ErrorAction Stop
+            Write-Error -Message "$($Response.errors.'#cdata-section')" -ErrorAction Stop
         } else {
             foreach ($P in $Response.projects) {
                 Write-Output -InputObject $P.project
@@ -176,7 +176,6 @@ function Get-TimeWaxProject {
         }
     }
 }
-
 
 function Get-TimeWaxCalendarEntry {
     [CmdletBinding(DefaultParameterSetName='List')]
@@ -225,7 +224,7 @@ function Get-TimeWaxCalendarEntry {
         Write-Verbose -Message "$($Body | fc | Out-String)"
         $Response = (Invoke-RestMethod -Uri $CalendarUri -Method Post -Body $Body -ContentType application/xml -UseBasicParsing).response
         if ($Response.valid -eq 'no') {
-            Write-Error -Message "$($Response.errors)" -ErrorAction Stop
+            Write-Error -Message "$($Response.errors.'#cdata-section')" -ErrorAction Stop
         } else {
             foreach ($e in $Response.Entries) {
                 Write-Output -InputObject $e.entry
