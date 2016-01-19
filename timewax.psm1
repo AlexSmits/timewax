@@ -208,6 +208,42 @@ function Get-TimeWaxProjectBreakdown {
     }
 }
 
+function Get-TimeWaxInvoiceLines {
+    [CmdletBinding()]
+    param (
+        [Parameter()]
+        [ValidateNotNullOrEmpty()]
+        [datetime] $From = [datetime]::Now.AddMonths(-1),
+
+        [Parameter()]
+        [ValidateNotNullOrEmpty()]
+        [datetime] $To = [datetime]::Now
+    )
+    begin {
+        if (-not (TestAuthenticated)) {
+            Write-Error -Message "Token was not valid or not found. Run Get-TimeWaxToken" -ErrorAction Stop
+        }
+        $InvoiceUri = $script:APIUri + 'invoices/lines/list/'
+        $dateFrom = $From.ToString('yyyyMMdd')
+        $dateTo = $To.ToString('yyyyMMdd')
+    } process {
+        $Body = [xml]('<request> 
+         <token>{0}</token>
+         <dateFrom>{1}</dateFrom>
+         <dateTo>{2}</dateTo>
+        </request>' -f $script:Token, $dateFrom, $dateTo)
+
+        $Response = (Invoke-RestMethod -Uri $InvoiceUri -Method Post -Body $Body -ContentType application/xml -UseBasicParsing).response
+        if ($Response.valid -eq 'no') {
+            Write-Error -Message "$($Response.errors.'#cdata-section')" -ErrorAction Stop
+        } else {
+            foreach ($I in $Response.invoices.invoice) {
+                Write-Output -InputObject $I
+            }
+        }
+    }
+}
+
 function Get-TimeWaxCalendarEntry {
     [CmdletBinding(DefaultParameterSetName='List')]
     param (
