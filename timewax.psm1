@@ -34,7 +34,7 @@ function Get-TimeWaxToken {
                 Write-Error -Message "Did not acquire a token. Exception: $($Response.errors)" -ErrorAction Stop
             } else {
                 Set-Variable -Scope 1 -Name Token -Value $Response.token
-                Set-Variable -Scope 1 -Name ValidUntil -Value $Response.validUntil
+                Set-Variable -Scope 1 -Name ValidUntil -Value (ConvertDateTime $Response.validUntil)
             }
         }
     }
@@ -234,14 +234,21 @@ function Get-TimeWaxCalendarEntry {
     }
 }
 
-#private functions
+#region private functions
 function TestAuthenticated {
-    if ($null -ne $script:Token) {
-        #//TODO: Build in check for validity time
+    if (($null -ne $script:Token) -and ($script:ValidUntil -gt [datetime]::Now)) {
         return $true
     } else {
         return $false
     }
 }
 
+function ConvertDateTime {
+    param (
+        [String] $InputString
+    )
+    $Convert = $InputString.Split('T') -join " "
+    return [datetime]::ParseExact($Convert,'yyyyMMdd HHmmss',$null)
+}
+#endregion private functions
 Export-ModuleMember -Function *-TimeWax*
