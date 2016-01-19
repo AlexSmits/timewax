@@ -152,26 +152,44 @@ function Get-TimeWaxTimeEntry {
 }
 
 function Get-TimeWaxProject {
-    [CmdletBinding()]
+    [CmdletBinding(DefaultParameterSetName='List')]
     param (
-
+        [Parameter(ParameterSetName='Named')]
+        [ValidateNotNullOrEmpty()]
+        [Alias('Code')]
+        [String] $Project
     )
     begin {
         if (-not (TestAuthenticated)) {
             Write-Error -Message "Token was not valid or not found. Run Get-TimeWaxToken" -ErrorAction Stop
         }
-        $ProjectUri = $script:APIUri + 'project/list/'
+        if ($PSCmdlet.ParameterSetName -eq 'List') {
+            $ProjectUri = $script:APIUri + 'project/list/'
+        } else {
+            $ProjectUri = $script:APIUri + 'project/get/'
+        }
     } process {
         $Body = [xml]('<request> 
-         <token>{0}</token> 
+            <token>{0}</token> 
         </request>' -f $script:Token)
+
+        if ($Project) {
+            $child = $Body.CreateElement("project")
+            $child.InnerText = $Project
+            [void] $body.DocumentElement.AppendChild($child)
+        }
+
         $Response = (Invoke-RestMethod -Uri $ProjectUri -Method Post -Body $Body -ContentType application/xml -UseBasicParsing).response
         
         if ($Response.valid -eq 'no') {
             Write-Error -Message "$($Response.errors.'#cdata-section')" -ErrorAction Stop
         } else {
-            foreach ($P in $Response.projects.project) {
-                Write-Output -InputObject $P
+            if ($PSCmdlet.ParameterSetName -eq 'List') {
+                foreach ($P in $Response.projects.project) {
+                    Write-Output -InputObject $P
+                }
+            } else {
+                Write-Output -InputObject $Response.project
             }
         }
     }
@@ -182,7 +200,7 @@ function Get-TimeWaxProjectBreakdown {
     param (
         [Parameter(Mandatory,ValueFromPipelineByPropertyName)]
         [ValidateNotNullOrEmpty()]
-        [Alias('Code','Name')]
+        [Alias('Code')]
         [String] $Project
     )
     begin {
