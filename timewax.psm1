@@ -23,7 +23,7 @@ function Get-TimeWaxToken {
                 ValidUntil = $script:ValidUntil
             }
         } else {
-            $TokenUri = $APIUri + 'authentication/token/get/'
+            $TokenUri = $script:APIUri + 'authentication/token/get/'
             $Body = [xml]('<request> 
                 <client>{0}</client> 
                 <username>{1}</username>
@@ -37,5 +37,61 @@ function Get-TimeWaxToken {
                 Set-Variable -Scope 1 -Name ValidUntil -Value $Response.validUntil
             }
         }
+    }
+}
+
+function Get-TimeWaxResource {
+    [cmdletbinding(DefaultParameterSetName='Named')]
+    param (
+        [Parameter(Mandatory, ValueFromPipeline, ValueFromPipelineByPropertyName, ParameterSetName='Named')]
+        [Alias('email','fullname')]
+        [ValidateNotNullOrEmpty()]
+        [String] $Name,
+
+        [Parameter(ParameterSetName='List')]
+        [Switch] $List
+    )
+    begin {
+        if (-not (TestAuthenticated)) {
+            Write-Error -Message "Token was not valid or not found. Run Get-TimeWaxToken" -ErrorAction Stop
+        }
+        if ($List) {
+            $ResourceUri = $script:APIUri + 'resource/list/'
+        } else {
+            $ResourceUri = $script:APIUri + 'resource/get/'
+        }
+    } process {
+        if ($List) {
+            $Body = [xml]('<request> 
+             <token>{0}</token> 
+            </request>' -f $script:Token)
+        } else {
+            $Body = [xml]('<request> 
+             <token>{0}</token> 
+             <resource>{1}</resource> 
+            </request>' -f $script:Token,$Name)
+        }
+        $Response = (Invoke-RestMethod -Uri $ResourceUri -Method Post -Body $Body -ContentType application/xml -UseBasicParsing).response
+        if ($Response.valid -eq 'no') {
+            Write-Error -Message "$($Response.error)" -ErrorAction Stop
+        } else {
+            if ($List) {
+                foreach ($r in $Response.resources) {
+                    Write-Output -InputObject $r.resource
+                }
+            } else {
+                Write-Output -InputObject $Response.resource
+            }
+        }
+    }
+}
+
+#private functions
+function TestAuthenticated {
+    if ($null -ne $script:Token) {
+        #//TODO: Build in check for validity time
+        return $true
+    } else {
+        return $false
     }
 }
