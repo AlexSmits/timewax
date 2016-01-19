@@ -86,6 +86,66 @@ function Get-TimeWaxResource {
     }
 }
 
+function Get-TimeWaxTimeEntry {
+    [CmdletBinding(DefaultParameterSetName='List')]
+    param (
+        [Parameter(Mandatory, ParameterSetName='Resource')]
+        [ValidateNotNullOrEmpty()]
+        [String] $Resource,
+
+        [Parameter(Mandatory, ParameterSetName='Project')]
+        [ValidateNotNullOrEmpty()]
+        [String] $Project,
+
+        [Parameter()]
+        [ValidateNotNullOrEmpty()]
+        [datetime] $From = [datetime]::Now.AddMonths(-1),
+
+        [Parameter()]
+        [ValidateNotNullOrEmpty()]
+        [datetime] $To = [datetime]::Now,
+
+        [Switch] $onlyApprovedEntries
+    )
+    begin {
+        if (-not (TestAuthenticated)) {
+            Write-Error -Message "Token was not valid or not found. Run Get-TimeWaxToken" -ErrorAction Stop
+        }
+        $TimeURI = $script:APIUri + 'time/entries/list/'
+        $dateFrom = $From.ToString('yyyyMMdd')
+        $dateTo = $To.ToString('yyyyMMdd')
+    } process {
+        $Body = [xml]('<request> 
+         <token>{0}</token>
+         <dateFrom>{1}</dateFrom>
+         <dateTo>{2}</dateTo>
+        </request>' -f $script:Token, $dateFrom, $dateTo)
+        if ($Resource) {
+            $child = $Body.CreateElement("resource")
+            $child.InnerText = $Resource
+            [void] $body.DocumentElement.AppendChild($child)
+        }
+        if ($Project) {
+            $child = $Body.CreateElement("project")
+            $child.InnerText = $Project
+            [void] $body.DocumentElement.AppendChild($child)
+        }
+        if ($onlyApprovedEntries) {
+            $child = $Body.CreateElement("onlyApprovedEntries")
+            $child.InnerText = 'yes'
+            [void] $body.DocumentElement.AppendChild($child)
+        }
+        $Response = (Invoke-RestMethod -Uri $TimeURI -Method Post -Body $Body -ContentType application/xml -UseBasicParsing).response
+        if ($Response.valid -eq 'no') {
+            Write-Error -Message "$($Response.errors)" -ErrorAction Stop
+        } else {
+            foreach ($e in $Response.Entries) {
+                Write-Output -InputObject $e.entry
+            }
+        }
+    }
+}
+
 #private functions
 function TestAuthenticated {
     if ($null -ne $script:Token) {
@@ -95,3 +155,5 @@ function TestAuthenticated {
         return $false
     }
 }
+
+Export-ModuleMember -Function *-TimeWax*
