@@ -177,6 +177,37 @@ function Get-TimeWaxProject {
     }
 }
 
+function Get-TimeWaxProjectBreakdown {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory,ValueFromPipelineByPropertyName)]
+        [ValidateNotNullOrEmpty()]
+        [Alias('Code','Name')]
+        [String] $Project
+    )
+    begin {
+        if (-not (TestAuthenticated)) {
+            Write-Error -Message "Token was not valid or not found. Run Get-TimeWaxToken" -ErrorAction Stop
+        }
+        $BreakdownUri = $script:APIUri + 'project/breakdown/list/'
+    } process {
+        $Body = [xml]('<request> 
+         <token>{0}</token>
+         <project>{1}</project>
+        </request>' -f $script:Token,$Project)
+
+        $Response = (Invoke-RestMethod -Uri $BreakdownUri -Method Post -Body $Body -ContentType application/xml -UseBasicParsing).response
+        
+        if ($Response.valid -eq 'no') {
+            Write-Error -Message "$($Response.errors.'#cdata-section')" -ErrorAction Stop
+        } else {
+            foreach ($B in $Response.breakdowns.breakdown) {
+                Write-Output -InputObject $B
+            }
+        }
+    }
+}
+
 function Get-TimeWaxCalendarEntry {
     [CmdletBinding(DefaultParameterSetName='List')]
     param (
