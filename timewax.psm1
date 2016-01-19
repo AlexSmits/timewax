@@ -40,11 +40,14 @@ function Get-TimeWaxToken {
     }
 }
 
+#should output custom object instead of XML elements.
+#//TODO: Create c# class to serialize to
+#object should be usable on pipeline to map ResourceCode to filters for other Get functions
 function Get-TimeWaxResource {
     [cmdletbinding(DefaultParameterSetName='Named')]
     param (
         [Parameter(Mandatory, ValueFromPipeline, ValueFromPipelineByPropertyName, ParameterSetName='Named')]
-        [Alias('email','fullname')]
+        [Alias('email','fullname','ResourceCode')]
         [ValidateNotNullOrEmpty()]
         [String] $Name,
 
@@ -89,9 +92,10 @@ function Get-TimeWaxResource {
 function Get-TimeWaxTimeEntry {
     [CmdletBinding(DefaultParameterSetName='List')]
     param (
-        [Parameter(Mandatory, ParameterSetName='Resource')]
+        [Parameter(Mandatory, ParameterSetName='Resource', ValueFromPipelineByPropertyName)]
         [ValidateNotNullOrEmpty()]
-        [String] $Resource,
+        [Alias('Resource','Code')]
+        [String] $ResourceCode,
 
         [Parameter(Mandatory, ParameterSetName='Project')]
         [ValidateNotNullOrEmpty()]
@@ -120,9 +124,10 @@ function Get-TimeWaxTimeEntry {
          <dateFrom>{1}</dateFrom>
          <dateTo>{2}</dateTo>
         </request>' -f $script:Token, $dateFrom, $dateTo)
-        if ($Resource) {
+
+        if ($ResourceCode) {
             $child = $Body.CreateElement("resource")
-            $child.InnerText = $Resource
+            $child.InnerText = $ResourceCode
             [void] $body.DocumentElement.AppendChild($child)
         }
         if ($Project) {
@@ -136,6 +141,89 @@ function Get-TimeWaxTimeEntry {
             [void] $body.DocumentElement.AppendChild($child)
         }
         $Response = (Invoke-RestMethod -Uri $TimeURI -Method Post -Body $Body -ContentType application/xml -UseBasicParsing).response
+        if ($Response.valid -eq 'no') {
+            Write-Error -Message "$($Response.errors)" -ErrorAction Stop
+        } else {
+            foreach ($e in $Response.Entries) {
+                Write-Output -InputObject $e.entry
+            }
+        }
+    }
+}
+
+function Get-TimeWaxProject {
+    [CmdletBinding()]
+    param (
+
+    )
+    begin {
+        if (-not (TestAuthenticated)) {
+            Write-Error -Message "Token was not valid or not found. Run Get-TimeWaxToken" -ErrorAction Stop
+        }
+        $ProjectUri = $script:APIUri + 'project/list/'
+    } process {
+        $Body = [xml]('<request> 
+         <token>{0}</token> 
+        </request>' -f $script:Token)
+        $Response = (Invoke-RestMethod -Uri $ProjectUri -Method Post -Body $Body -ContentType application/xml -UseBasicParsing).response
+        
+        if ($Response.valid -eq 'no') {
+            Write-Error -Message "$($Response.errors)" -ErrorAction Stop
+        } else {
+            foreach ($P in $Response.projects) {
+                Write-Output -InputObject $P.project
+            }
+        }
+    }
+}
+
+
+function Get-TimeWaxCalendarEntry {
+    [CmdletBinding(DefaultParameterSetName='List')]
+    param (
+        [Parameter(Mandatory, ParameterSetName='Resource', ValueFromPipelineByPropertyName)]
+        [Alias('Resource','Code')]
+        [ValidateNotNullOrEmpty()]
+        [String] $ResourceCode,
+
+        [Parameter(Mandatory, ParameterSetName='Id')]
+        [ValidateNotNullOrEmpty()]
+        [String] $Id,
+
+        [Parameter()]
+        [ValidateNotNullOrEmpty()]
+        [datetime] $From = [datetime]::Now.AddMonths(-1),
+
+        [Parameter()]
+        [ValidateNotNullOrEmpty()]
+        [datetime] $To = [datetime]::Now
+    )
+    begin {
+        if (-not (TestAuthenticated)) {
+            Write-Error -Message "Token was not valid or not found. Run Get-TimeWaxToken" -ErrorAction Stop
+        }
+        $CalendarUri = $script:APIUri + 'calendar/entries/list/'
+        $dateFrom = $From.ToString('yyyyMMdd')
+        $dateTo = $To.ToString('yyyyMMdd')
+    } process {
+        $Body = [xml]('<request> 
+         <token>{0}</token>
+         <dateFrom>{1}</dateFrom>
+         <dateTo>{2}</dateTo>
+        </request>' -f $script:Token, $dateFrom, $dateTo)
+
+        if ($ResourceCode) {
+            $child = $Body.CreateElement("resource")
+            $child.InnerText = $ResourceCode
+            [void] $body.DocumentElement.AppendChild($child)
+        }
+        if ($Id) { #API apparently does not filter on this https://support.timewax.com/hc/nl/articles/203496036-calendar-entries-list
+            $child = $Body.CreateElement("id")
+            $child.InnerText = $Id
+            [void] $body.DocumentElement.AppendChild($child)
+        }
+        Write-Verbose -Message "$($Body | fc | Out-String)"
+        $Response = (Invoke-RestMethod -Uri $CalendarUri -Method Post -Body $Body -ContentType application/xml -UseBasicParsing).response
         if ($Response.valid -eq 'no') {
             Write-Error -Message "$($Response.errors)" -ErrorAction Stop
         } else {
