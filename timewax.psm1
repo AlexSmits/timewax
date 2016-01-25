@@ -29,19 +29,22 @@ function Get-TimeWaxToken {
                 <username>{1}</username>
                 <password>{2}</password> 
             </request>' -f $ClientName,$Credential.UserName,$Credential.GetNetworkCredential().Password)
-            $Response = (Invoke-RestMethod -Uri $TokenUri -Method Post -Body $Body -ContentType application/xml -UseBasicParsing).response
+            try {
+                $Response = (Invoke-RestMethod -Uri $TokenUri -Method Post -Body $Body -ContentType application/xml -UseBasicParsing).response
+            } catch {
+                Write-Error -ErrorRecord $_ -ErrorAction Stop
+            }
             if ($Response.valid -eq 'no') {
                 Write-Error -Message "Did not acquire a token. Exception: $($Response.errors.'#cdata-section')" -ErrorAction Stop
             } else {
                 Set-Variable -Scope 1 -Name Token -Value $Response.token
                 Set-Variable -Scope 1 -Name ValidUntil -Value (ConvertDateTime $Response.validUntil)
+                Get-TimeWaxToken -Current
             }
         }
     }
 }
 
-#should output custom object instead of XML elements.
-#//TODO: Create c# class to serialize to
 #object should be usable on pipeline to map ResourceCode to filters for other Get functions
 function Get-TimeWaxResource {
     [cmdletbinding(DefaultParameterSetName='Named')]
@@ -80,10 +83,10 @@ function Get-TimeWaxResource {
         } else {
             if ($List) {
                 foreach ($r in $Response.resources.resource) {
-                    Write-Output -InputObject $r
+                    $r | ConvertXMLElement
                 }
             } else {
-                Write-Output -InputObject $Response.resource
+                $Response.resource | ConvertXMLElement
             }
         }
     }
@@ -145,7 +148,7 @@ function Get-TimeWaxTimeEntry {
             Write-Error -Message "$($Response.errors.'#cdata-section')" -ErrorAction Stop
         } else {
             foreach ($e in $Response.Entries.entry) {
-                Write-Output -InputObject $e
+                $e | ConvertXMLElement
             }
         }
     }
@@ -186,10 +189,10 @@ function Get-TimeWaxProject {
         } else {
             if ($PSCmdlet.ParameterSetName -eq 'List') {
                 foreach ($P in $Response.projects.project) {
-                    Write-Output -InputObject $P
+                    $P | ConvertXMLElement
                 }
             } else {
-                Write-Output -InputObject $Response.project
+                $Response.project | ConvertXMLElement
             }
         }
     }
@@ -220,7 +223,7 @@ function Get-TimeWaxProjectBreakdown {
             Write-Error -Message "$($Response.errors.'#cdata-section')" -ErrorAction Stop
         } else {
             foreach ($B in $Response.breakdowns.breakdown) {
-                Write-Output -InputObject $B
+                $B | ConvertXMLElement
             }
         }
     }
@@ -256,7 +259,7 @@ function Get-TimeWaxInvoiceLines {
             Write-Error -Message "$($Response.errors.'#cdata-section')" -ErrorAction Stop
         } else {
             foreach ($I in $Response.invoices.invoice) {
-                Write-Output -InputObject $I
+                $I | ConvertXMLElement
             }
         }
     }
@@ -286,7 +289,7 @@ function Get-TimeWaxBudgetCost {
             Write-Error -Message "$($Response.errors.'#cdata-section')" -ErrorAction Stop
         } else {
             foreach ($B in $Response.budgetcosts.budgetcost) {
-                Write-Output -InputObject $B
+                $B | ConvertXMLElement
             }
         }
     }
@@ -316,7 +319,7 @@ function Get-TimeWaxPurchaseInvoice {
             Write-Error -Message "$($Response.errors.'#cdata-section')" -ErrorAction Stop
         } else {
             foreach ($P in $Response.purchaseInvoices.purchaseInvoice) {
-                Write-Output -InputObject $P
+                $P | ConvertXMLElement
             }
         }
     }
@@ -352,7 +355,7 @@ function Get-TimeWaxCalculation {
             Write-Error -Message "$($Response.errors.'#cdata-section')" -ErrorAction Stop
         } else {
             foreach ($C in $Response.calculations.calculation) {
-                Write-Output -InputObject $C
+                $C | ConvertXMLElement
             }
         }
     }
@@ -408,7 +411,7 @@ function Get-TimeWaxCalendarEntry {
             Write-Error -Message "$($Response.errors.'#cdata-section')" -ErrorAction Stop
         } else {
             foreach ($e in $Response.Entries.entry) {
-                Write-Output -InputObject $e
+                $e | ConvertXMLElement
             }
         }
     }
@@ -455,10 +458,10 @@ function Get-TimeWaxCompany {
         } 
         if ($PSCmdlet.ParameterSetName -eq 'List') {
             foreach ($C in $Response.companies.company) {
-                Write-Output -InputObject $C
+                $C | ConvertXMLElement
             }
         } else {
-            Write-Output -InputObject $Response.company
+            $Response.company | ConvertXMLElement
         }
     }
 }
@@ -476,8 +479,61 @@ function ConvertDateTime {
     param (
         [String] $InputString
     )
-    $Convert = $InputString.Split('T') -join " "
-    return [datetime]::ParseExact($Convert,'yyyyMMdd HHmmss',$null)
+    if ($InputString.Length -eq 15) {
+        $Convert = $InputString.Split('T') -join " "
+        return [datetime]::ParseExact($Convert,'yyyyMMdd HHmmss',$null)
+    } elseif ($InputString.Length -eq 8) {
+        return [datetime]::ParseExact($InputString,'yyyyMMdd',$null)
+    } elseif ($InputString.Length -eq 10) {
+        return [datetime]::ParseExact($InputString,'dd-MM-yyyy',$null)
+    } else {
+        [datetime]::Parse($InputString)
+    }
+}
+
+function ConvertXMLElement {
+    param (
+        [Parameter(Mandatory, ValueFromPipeline)]
+        [System.Xml.XmlElement] $Element
+    )
+    $OutObj = New-Object -TypeName hashtable
+    $Element | Get-Member -MemberType Properties | ForEach-Object -Process {
+        $Key = $_.Name
+        if ($null -ne $Element.($_.Name)) {
+            $Value = $Element.($_.Name).ToString()
+        } else {
+            $Value = $null
+        }
+        if ([string]::Empty -eq $Value) {
+            $value = $null
+        }
+        if ($Key -like '*date*' -and $null -ne $value) {
+            try {
+                $OutObj.Add($Key,(ConvertDateTime $Value))
+            } catch {
+                $OutObj.Add($Key,$Value)
+            }
+        } elseif ($Value -eq 'yes' -or $Value -eq 'ja') {
+            $OutObj.Add($Key,$true) 
+        } elseif ($Value -eq 'no' -or $Value -eq 'nee') {
+            $OutObj.Add($Key,$false) 
+        } elseif ($Key -like '*time*'-and $null -ne $Value) {
+            try {
+                $OutObj.Add($Key,[timespan]::Parse($Value)) 
+            } catch {
+                $OutObj.Add($Key,$Value)
+            }
+        } elseif ($Key -like '*hour*' -and $null -ne $value) {
+            try {
+                $OutObj.Add($Key,[int]$Value)
+            } catch {
+                $OutObj.Add($Key,$Value)
+            }
+        } else {
+            $OutObj.Add($Key,$Value)
+        }
+    }
+    [PSCustomObject] $OutObj
 }
 #endregion private functions
 Export-ModuleMember -Function *-TimeWax*
