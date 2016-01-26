@@ -550,37 +550,48 @@ function Write-TimeWaxDatabase {
         if ($InputObject.pstypenames.Contains('TimeWax.Resource')) {
             $TableName = 'Resource'
             $TableVar = $TableName + "TablePresent"
+            $Column = 'Code'
         } elseif ($InputObject.pstypenames.Contains('TimeWax.TimeEntry')) {
             $TableName = 'TimeEntry'
             $TableVar = $TableName + "TablePresent"
+            $Column = 'id'
         } elseif ($InputObject.pstypenames.Contains('TimeWax.Project')) {
             $TableName = 'Project'
             $TableVar = $TableName + "TablePresent"
+            $Column = 'code'
         } elseif ($InputObject.pstypenames.Contains('TimeWax.ProjectBreakDown')) {
             $TableName = 'ProjectBreakDown'
             $TableVar = $TableName + "TablePresent"
+            $Column = 'id'
         } elseif ($InputObject.pstypenames.Contains('TimeWax.InvoiceLine')) {
             $TableName = 'InvoiceLine'
             $TableVar = $TableName + "TablePresent"
+            $Column = 'number'
         } elseif ($InputObject.pstypenames.Contains('TimeWax.CalendarEntry')) {
             $TableName = 'CalendarEntry'
             $TableVar = $TableName + "TablePresent"
+            $Column = 'id'
         } else {
             Write-Error -Message 'Unknown Inputtype, abort' -ErrorAction Stop
         }
 
         if (-not (Get-Variable -Name $TableVar -Scope 1).value) {
             if (TestTableExists -TableName $TableName) {
-                Write-Verbose -Message "$TableName Table already exists"
+                Write-Debug -Message "$TableName Table already exists"
                 Set-Variable -Name $TableVar -Value $true -Scope 1
             } else {
-                Write-Verbose -Message "$TableName Table does not exist, creating"
+                Write-Debug -Message "$TableName Table does not exist, creating"
                 $InputObject | CreateTableFromObject -TableName $TableName | InvokeSQLQuery
                 Set-Variable -Name $TableVar -Value $true -Scope 1
             }
         }
-        $InputObject | CreateInsertFromObject -TableName $TableName | InvokeSQLQuery
-        # start inserting data here
+        if (TestIfEntryAlreadyExist -TableName $TableName -Column $Column -Value $InputObject.$Column) {
+            Write-Debug -Message "$($InputObject | Out-String) is already present in db"
+            $InputObject | CreateUpdateFromObject -TableName $TableName -UniqueColumn $Column -UniqueValue $InputObject.$Column | InvokeSQLQuery
+        } else {
+            Write-Debug -Message "Inserting $($InputObject | Out-String) in db"
+            $InputObject | CreateInsertFromObject -TableName $TableName | InvokeSQLQuery
+        }
     }
 }
 
@@ -624,6 +635,25 @@ function CreateTableFromObject {
     Write-Output -InputObject $SQLQuery
 }
 
+function TestIfEntryAlreadyExist {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory)]
+        [String] $TableName,
+
+        [Parameter(Mandatory)]
+        [String] $Column,
+
+        [Parameter(Mandatory)]
+        [String] $Value
+    )
+
+    $SQLQuery = "IF EXISTS (SELECT * FROM {0} WHERE {1}='{2}')
+    select 1 else select 0" -f $TableName,$Column,$Value
+    Write-Debug -Message $SQLQuery
+    [bool](InvokeSQLQuery -SQLQuery $SQLQuery).Column1
+}
+
 function CreateInsertFromObject {
     [CmdletBinding()]
     param (
@@ -650,6 +680,42 @@ function CreateInsertFromObject {
     }
 }
 
+function CreateUpdateFromObject {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory, ValueFromPipeline)]
+        [PSCustomObject] $InputObject,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [String] $TableName,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [String] $UniqueColumn,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [String] $UniqueValue
+    )
+    process {
+        $update = [string]::Empty
+        $InputObject | Get-Member -MemberType NoteProperty | ForEach-Object -Process {
+            $column = "$($_.Name)"
+            $value = "$($InputObject.($_.Name) -as [String])"
+            if (-not $value) {
+                $value = 'NULL'
+                $update += ("{0} = {1}," -f $column,$value)
+            } else {
+                $update += ("{0} = '{1}'," -f $column,$value)
+            }
+            
+        }
+        $SQLQuery = "UPDATE {0} SET {1} WHERE {2}='{3}'" -f $TableName,$update.TrimEnd(','),$UniqueColumn,$UniqueValue
+        Write-Output -InputObject $SQLQuery
+    }
+}
+
 function InvokeSQLQuery {
     [CmdletBinding()]
     param (
@@ -657,6 +723,7 @@ function InvokeSQLQuery {
         [ValidateNotNullOrEmpty()]
         [String] $SQLQuery
     )
+    Write-Debug -Message "Executing Query: $SQLQuery"
     $Command = New-Object System.Data.SQLClient.SQLCommand
     $Command.Connection = $script:DatabaseConnection
     $Command.CommandText = $SQLQuery
